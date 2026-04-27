@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FAP Review">
+<title>FAP Review — OFAM</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0d12;
+    --surface: #111620;
+    --surface2: #181e2a;
+    --border: #1e2a3a;
+    --accent: #2563eb;
+    --accent2: #38bdf8;
+    --gold: #f59e0b;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #eab308;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(10,13,18,0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 20px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header-left { display: flex; flex-direction: column; gap: 1px; }
+  .header-title { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; color: var(--text); }
+  .header-sub { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.05em; }
+  .header-badge {
+    background: var(--accent);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    letter-spacing: 0.05em;
+  }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .tab {
+    flex: 1;
+    padding: 12px 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-align: center;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    user-select: none;
+  }
+  .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+
+  /* ── SECTIONS ── */
+  .section { display: none; padding: 16px; animation: fadeIn 0.2s ease; }
+  .section.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ── UPLOAD AREA ── */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 16px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface);
+    position: relative;
+    overflow: hidden;
+  }
+  .upload-zone:active { border-color: var(--accent); background: var(--surface2); transform: scale(0.98); }
+  .upload-zone.has-files { border-color: var(--accent); border-style: solid; }
+  .upload-icon { font-size: 40px; margin-bottom: 10px; display: block; }
+  .upload-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .upload-sub { font-family: var(--mono); font-size: 11px; color: var(--muted); line-height: 1.5; }
+  #fileInput { display: none; }
+
+  /* ── PAGE PREVIEWS ── */
+  .previews { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+  .preview-item {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 8.5/11;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+  .preview-item img { width: 100%; height: 100%; object-fit: cover; }
+  .preview-num {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    background: rgba(0,0,0,0.7);
+    color: #fff;
+    font-family: var(--mono);
+    font-size: 9px;
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+  .preview-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--red);
+    color: #fff;
+    border: none;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  /* ── CRITERIA PANEL ── */
+  .criteria-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 14px 0;
+  }
+  .criteria-chip {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .criteria-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── DEPT INPUT ── */
+  .field-label { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 6px; letter-spacing: 0.05em; }
+  .field-input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    margin-bottom: 12px;
+    -webkit-appearance: none;
+  }
+  .field-input:focus { border-color: var(--accent); }
+
+  /* ── ANALYZE BUTTON ── */
+  .btn-analyze {
+    width: 100%;
+    padding: 16px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: -0.2px;
+    margin-top: 4px;
+  }
+  .btn-analyze:active { transform: scale(0.97); background: #1d4ed8; }
+  .btn-analyze:disabled { background: var(--muted); cursor: not-allowed; transform: none; }
+
+  /* ── LOADING ── */
+  .loading-state {
+    display: none;
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .loading-state.active { display: block; }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-label { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .loading-steps { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .loading-step { font-family: var(--mono); font-size: 11px; color: var(--muted); opacity: 0; transition: opacity 0.4s; }
+  .loading-step.show { opacity: 1; color: var(--accent2); }
+
+  /* ── RESULTS ── */
+  .result-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .result-dept { font-size: 15px; font-weight: 700; }
+  .result-meta { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .verdict-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+  }
+  .verdict-approve { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+  .verdict-return { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+  .verdict-conditional { background: rgba(234,179,8,0.15); color: var(--yellow); border: 1px solid rgba(234,179,8,0.3); }
+
+  .criteria-results { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .criteria-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .criteria-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    cursor: pointer;
+  }
+  .criteria-card-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .status-icon { font-size: 16px; }
+  .criteria-card-body {
+    padding: 0 14px 12px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--muted);
+    display: none;
+  }
+  .criteria-card-body.open { display: block; }
+  .chevron { font-size: 12px; color: var(--muted); transition: transform 0.2s; }
+  .chevron.open { transform: rotate(180deg); }
+
+  .flag-list { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .flag-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 11px;
+    padding: 4px 0;
+    border-top: 1px solid var(--border);
+  }
+  .flag-bullet { flex-shrink: 0; margin-top: 2px; }
+
+  .summary-box {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .summary-box-title { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.08em; margin-bottom: 8px; }
+  .summary-box-text { font-size: 13px; line-height: 1.6; color: var(--text); }
+
+  .action-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .btn-secondary {
+    flex: 1;
+    padding: 12px;
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .btn-secondary:active { background: var(--surface); transform: scale(0.97); }
+  .btn-save {
+    flex: 1;
+    padding: 12px;
+    background: rgba(37,99,235,0.15);
+    color: var(--accent2);
+    border: 1px solid rgba(37,99,235,0.3);
+    border-radius: 12px;
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .btn-save:active { background: rgba(37,99,235,0.25); transform: scale(0.97); }
+
+  /* ── RECORDS ── */
+  .records-list { display: flex; flex-direction: column; gap: 10px; }
+  .record-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .record-card:active { background: var(--surface2); }
+  .record-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .record-dept { font-size: 14px; font-weight: 700; }
+  .record-date { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .record-meta { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .record-verdict { margin-top: 8px; }
+
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--muted);
+  }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+  .empty-text { font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+  .modal-overlay.active { display: flex; align-items: flex-end; }
+  .modal {
+    background: var(--surface);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    border-top: 1px solid var(--border);
+    padding: 20px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 0 auto 16px; }
+  .modal-title { font-size: 16px; font-weight: 800; margin-bottom: 14px; }
+  .modal-close {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: var(--surface2);
+    border: none;
+    color: var(--muted);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .api-key-section { margin-bottom: 16px; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    opacity: 0;
+    transition: all 0.3s;
+    z-index: 300;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .safe-bottom { height: 40px; }
+
+  /* ── SETTINGS BTN ── */
+  .settings-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    <div class="header-title">FAP Review</div>
+    <div class="header-sub">OFAM · DGS · Fleet Acquisition</div>
+  </div>
+  <button class="settings-btn" onclick="openSettings()">⚙️</button>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('review')">📋 Review</div>
+  <div class="tab" onclick="switchTab('records')">📁 Records</div>
+</div>
+
+<!-- REVIEW SECTION -->
+<div class="section active" id="tab-review">
+
+  <!-- Upload Zone -->
+  <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+    <span class="upload-icon">📄</span>
+    <div class="upload-title">Upload FAP Pages</div>
+    <div class="upload-sub">Tap to take photos or select from library<br>Multiple pages supported</div>
+    <input type="file" id="fileInput" accept="image/*" multiple capture="environment" onchange="handleFiles(this.files)">
+  </div>
+  <div class="previews" id="previews"></div>
+
+  <!-- Dept / FAP Info -->
+  <div style="margin-top:16px">
+    <div class="field-label">DEPARTMENT / AGENCY</div>
+    <input class="field-input" id="deptName" type="text" placeholder="e.g. CDCR, CalPERS, EMSA" autocomplete="off">
+
+    <div class="field-label">FAP REFERENCE / MEMO #</div>
+    <input class="field-input" id="fapRef" type="text" placeholder="e.g. FAP-2025-042" autocomplete="off">
+  </div>
+
+  <!-- Review Criteria -->
+  <div class="field-label" style="margin-top:4px">REVIEW CRITERIA</div>
+  <div class="criteria-grid">
+    <div class="criteria-chip"><div class="criteria-dot" style="background:#2563eb"></div>ZEV Mandate</div>
+    <div class="criteria-chip"><div class="criteria-dot" style="background:#f59e0b"></div>PSSP Exemption</div>
+    <div class="criteria-chip"><div class="criteria-dot" style="background:#22c55e"></div>SAM 4121/4126</div>
+    <div class="criteria-chip"><div class="criteria-dot" style="background:#38bdf8"></div>Utilization</div>
+    <div class="criteria-chip"><div class="criteria-dot" style="background:#a78bfa"></div>Routing Rationale</div>
+    <div class="criteria-chip"><div class="criteria-dot" style="background:#fb923c"></div>CARB Compliance</div>
+  </div>
+
+  <button class="btn-analyze" id="analyzeBtn" onclick="runAnalysis()">Analyze FAP →</button>
+
+  <!-- Loading -->
+  <div class="loading-state" id="loadingState">
+    <div class="spinner"></div>
+    <div class="loading-label">Analyzing FAP submission...</div>
+    <div class="loading-steps">
+      <div class="loading-step" id="step1">▸ Reading document pages</div>
+      <div class="loading-step" id="step2">▸ Checking ZEV mandate compliance</div>
+      <div class="loading-step" id="step3">▸ Evaluating PSSP exemption claims</div>
+      <div class="loading-step" id="step4">▸ Verifying SAM 4121 / 4126 alignment</div>
+      <div class="loading-step" id="step5">▸ Reviewing utilization thresholds</div>
+      <div class="loading-step" id="step6">▸ Assessing routing rationale</div>
+      <div class="loading-step" id="step7">▸ Generating OFAM recommendation</div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="resultsArea" style="display:none; margin-top:4px">
+    <div class="result-header">
+      <div>
+        <div class="result-dept" id="resultDept">—</div>
+        <div class="result-meta" id="resultMeta">—</div>
+      </div>
+      <div class="verdict-badge" id="verdictBadge">—</div>
+    </div>
+
+    <div class="criteria-results" id="criteriaResults"></div>
+
+    <div class="summary-box">
+      <div class="summary-box-title">OFAM RECOMMENDATION</div>
+      <div class="summary-box-text" id="summaryText">—</div>
+    </div>
+
+    <div class="action-row">
+      <button class="btn-secondary" onclick="resetReview()">New Review</button>
+      <button class="btn-save" onclick="saveRecord()">Save Record</button>
+    </div>
+  </div>
+
+  <div class="safe-bottom"></div>
+</div>
+
+<!-- RECORDS SECTION -->
+<div class="section" id="tab-records">
+  <div class="records-list" id="recordsList"></div>
+  <div class="safe-bottom"></div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settingsModal" onclick="closeSettings(event)">
+  <div class="modal" style="position:relative">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeSettings()">✕</button>
+    <div class="modal-title">Settings</div>
+    <div class="api-key-section">
+      <div class="field-label">ANTHROPIC API KEY</div>
+      <input class="field-input" id="apiKeyInput" type="password" placeholder="sk-ant-..." autocomplete="off">
+      <div style="font-family: var(--mono); font-size: 10px; color: var(--muted); line-height: 1.6; margin-top: -4px; margin-bottom: 12px;">
+        Your key is stored only on this device. Get yours at console.anthropic.com
+      </div>
+      <button class="btn-analyze" onclick="saveApiKey()">Save Key</button>
+    </div>
+    <div style="margin-top:16px; border-top: 1px solid var(--border); padding-top:16px">
+      <div class="field-label">DATA</div>
+      <button class="btn-secondary" onclick="clearAllRecords()" style="width:100%; margin-top:4px; color: var(--red); border-color: rgba(239,68,68,0.3)">Clear All Records</button>
+    </div>
+    <div class="safe-bottom"></div>
+  </div>
+</div>
+
+<!-- RECORD DETAIL MODAL -->
+<div class="modal-overlay" id="recordModal" onclick="closeRecordModal(event)">
+  <div class="modal" style="position:relative">
+    <div class="modal-handle"></div>
+    <button class="modal-close" onclick="closeRecordModal()">✕</button>
+    <div id="recordModalContent"></div>
+    <div class="safe-bottom"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──
+let uploadedFiles = [];
+let currentResult = null;
+let records = JSON.parse(localStorage.getItem('fap_records') || '[]');
+
+// ── API KEY ──
+function getApiKey() { return localStorage.getItem('fap_api_key') || ''; }
+function saveApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  if (!key) { showToast('Please enter an API key'); return; }
+  localStorage.setItem('fap_api_key', key);
+  closeSettings();
+  showToast('API key saved ✓');
+}
+
+// ── TABS ──
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    t.classList.toggle('active', ['review','records'][i] === tab);
+  });
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'records') renderRecords();
+}
+
+// ── FILE HANDLING ──
+function handleFiles(files) {
+  Array.from(files).forEach(f => {
+    if (uploadedFiles.length >= 20) return;
+    uploadedFiles.push(f);
+  });
+  renderPreviews();
+}
+
+function renderPreviews() {
+  const zone = document.getElementById('uploadZone');
+  const container = document.getElementById('previews');
+  container.innerHTML = '';
+  if (uploadedFiles.length === 0) {
+    zone.classList.remove('has-files');
+    return;
+  }
+  zone.classList.add('has-files');
+  zone.querySelector('.upload-icon').textContent = '➕';
+  zone.querySelector('.upload-title').textContent = `${uploadedFiles.length} page${uploadedFiles.length>1?'s':''} loaded`;
+  zone.querySelector('.upload-sub').textContent = 'Tap to add more pages';
+
+  uploadedFiles.forEach((f, i) => {
+    const url = URL.createObjectURL(f);
+    const item = document.createElement('div');
+    item.className = 'preview-item';
+    item.innerHTML = `
+      <img src="${url}" alt="Page ${i+1}">
+      <div class="preview-num">p.${i+1}</div>
+      <button class="preview-remove" onclick="removeFile(${i})">✕</button>
+    `;
+    container.appendChild(item);
+  });
+}
+
+function removeFile(idx) {
+  uploadedFiles.splice(idx, 1);
+  renderPreviews();
+}
+
+// ── IMAGE TO BASE64 ──
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── ANALYSIS ──
+async function runAnalysis() {
+  const apiKey = getApiKey();
+  if (!apiKey) { openSettings(); showToast('Add your API key first'); return; }
+  if (uploadedFiles.length === 0) { showToast('Upload at least one FAP page'); return; }
+
+  const dept = document.getElementById('deptName').value.trim() || 'Unknown Department';
+  const ref = document.getElementById('fapRef').value.trim() || 'No ref';
+
+  // UI state
+  document.getElementById('analyzeBtn').style.display = 'none';
+  document.getElementById('resultsArea').style.display = 'none';
+  const loading = document.getElementById('loadingState');
+  loading.classList.add('active');
+  animateSteps();
+
+  try {
+    // Convert all images to base64
+    const imageContents = await Promise.all(uploadedFiles.map(async (f) => {
+      const b64 = await fileToBase64(f);
+      const mediaType = f.type || 'image/jpeg';
+      return { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } };
+    }));
+
+    const systemPrompt = `You are an OFAM FAP Reviewer for California's Department of General Services (DGS), Office of Fleet and Asset Management. You review Fleet Acquisition Plan (FAP) submissions from state departments for compliance with state policy.
+
+Review the submitted FAP document pages and provide a structured JSON analysis covering ALL of the following criteria:
+
+1. ZEV Mandate — Per Executive Order B-2-11 and state ZEV policy, departments must acquire BEV/PHEV vehicles unless a valid exemption applies. Check if the vehicle type requested is ZEV-compliant or if a proper exemption is claimed.
+
+2. PSSP Exemption — If the department is requesting a PSSP (Procurement of State Surplus Property) exemption or claiming exempt status, evaluate whether the justification meets OFAM standards. Flag if the exemption is unsubstantiated.
+
+3. SAM 4121 / SAM 4126 — Review compliance with State Administrative Manual sections covering vehicle utilization thresholds (SAM 4121) and acquisition justification requirements (SAM 4126). Flag missing required elements.
+
+4. Utilization — Check whether the department has documented current vehicle utilization (mileage, trip logs, pooling options). Flag if utilization data is absent, insufficient, or below threshold (typically 10,000–12,000 miles/year for passenger vehicles).
+
+5. Routing Rationale — Assess whether the department explains why the request was routed appropriately (direct purchase, lease, interagency transfer, etc.) and whether OFAM 161/161-S or OFAM 163 forms are referenced as appropriate.
+
+6. CARB Compliance — Check whether the vehicle requested aligns with CARB fleet rules and advanced clean fleet requirements applicable to state agencies.
+
+Return ONLY a valid JSON object with this exact structure:
+{
+  "verdict": "APPROVE" | "RETURN" | "CONDITIONAL",
+  "summary": "2-3 sentence overall OFAM recommendation and disposition",
+  "criteria": [
+    {
+      "name": "ZEV Mandate",
+      "status": "PASS" | "FAIL" | "FLAG" | "MISSING",
+      "finding": "1-2 sentence finding",
+      "flags": ["specific issue 1", "specific issue 2"]
+    },
+    {
+      "name": "PSSP Exemption",
+      "status": "PASS" | "FAIL" | "FLAG" | "N/A",
+      "finding": "...",
+      "flags": []
+    },
+    {
+      "name": "SAM 4121 / 4126",
+      "status": "...",
+      "finding": "...",
+      "flags": []
+    },
+    {
+      "name": "Utilization",
+      "status": "...",
+      "finding": "...",
+      "flags": []
+    },
+    {
+      "name": "Routing Rationale",
+      "status": "...",
+      "finding": "...",
+      "flags": []
+    },
+    {
+      "name": "CARB Compliance",
+      "status": "...",
+      "finding": "...",
+      "flags": []
+    }
+  ]
+}`;
+
+    const userContent = [
+      ...imageContents,
+      { type: 'text', text: `Department: ${dept}\nFAP Reference: ${ref}\n\nPlease review these ${uploadedFiles.length} FAP document page(s) and return the structured JSON analysis only.` }
+    ];
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userContent }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || 'API error');
+    }
+
+    const data = await response.json();
+    const rawText = data.content.map(b => b.text || '').join('');
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const result = JSON.parse(clean);
+
+    currentResult = { dept, ref, date: new Date().toISOString(), pages: uploadedFiles.length, ...result };
+    renderResults(currentResult);
+
+  } catch (err) {
+    loading.classList.remove('active');
+    document.getElementById('analyzeBtn').style.display = 'block';
+    showToast('Error: ' + (err.message || 'Check API key'));
+    console.error(err);
+  }
+}
+
+function animateSteps() {
+  const steps = ['step1','step2','step3','step4','step5','step6','step7'];
+  steps.forEach((id, i) => {
+    setTimeout(() => {
+      document.getElementById(id)?.classList.add('show');
+    }, i * 800);
+  });
+}
+
+// ── RENDER RESULTS ──
+function renderResults(r) {
+  document.getElementById('loadingState').classList.remove('active');
+  document.getElementById('analyzeBtn').style.display = 'none';
+
+  document.getElementById('resultDept').textContent = r.dept;
+  document.getElementById('resultMeta').textContent = `${r.ref} · ${r.pages} page${r.pages>1?'s':''} · ${formatDate(r.date)}`;
+
+  const badge = document.getElementById('verdictBadge');
+  badge.textContent = r.verdict;
+  badge.className = 'verdict-badge';
+  if (r.verdict === 'APPROVE') badge.classList.add('verdict-approve');
+  else if (r.verdict === 'RETURN') badge.classList.add('verdict-return');
+  else badge.classList.add('verdict-conditional');
+
+  // Criteria cards
+  const container = document.getElementById('criteriaResults');
+  container.innerHTML = '';
+  (r.criteria || []).forEach((c, i) => {
+    const icon = statusIcon(c.status);
+    const card = document.createElement('div');
+    card.className = 'criteria-card';
+    card.innerHTML = `
+      <div class="criteria-card-header" onclick="toggleCard(${i})">
+        <div class="criteria-card-title">
+          <span class="status-icon">${icon}</span>
+          ${c.name}
+        </div>
+        <span class="chevron" id="chev-${i}">▾</span>
+      </div>
+      <div class="criteria-card-body" id="body-${i}">
+        <div>${c.finding}</div>
+        ${c.flags && c.flags.length ? `
+          <div class="flag-list">
+            ${c.flags.map(f => `<div class="flag-item"><span class="flag-bullet">⚠</span><span>${f}</span></div>`).join('')}
+          </div>` : ''}
+      </div>
+    `;
+    container.appendChild(card);
+  });
+
+  document.getElementById('summaryText').textContent = r.summary;
+  document.getElementById('resultsArea').style.display = 'block';
+  document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function toggleCard(i) {
+  const body = document.getElementById('body-' + i);
+  const chev = document.getElementById('chev-' + i);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+function statusIcon(status) {
+  const map = { 'PASS': '✅', 'FAIL': '❌', 'FLAG': '⚠️', 'MISSING': '🔴', 'N/A': '⚪' };
+  return map[status] || '⚪';
+}
+
+// ── SAVE RECORD ──
+function saveRecord() {
+  if (!currentResult) return;
+  records.unshift(currentResult);
+  localStorage.setItem('fap_records', JSON.stringify(records));
+  showToast('Record saved ✓');
+}
+
+function resetReview() {
+  uploadedFiles = [];
+  currentResult = null;
+  document.getElementById('previews').innerHTML = '';
+  document.getElementById('deptName').value = '';
+  document.getElementById('fapRef').value = '';
+  document.getElementById('resultsArea').style.display = 'none';
+  document.getElementById('analyzeBtn').style.display = 'block';
+  document.getElementById('fileInput').value = '';
+
+  const zone = document.getElementById('uploadZone');
+  zone.classList.remove('has-files');
+  zone.querySelector('.upload-icon').textContent = '📄';
+  zone.querySelector('.upload-title').textContent = 'Upload FAP Pages';
+  zone.querySelector('.upload-sub').textContent = 'Tap to take photos or select from library\nMultiple pages supported';
+
+  // Reset loading steps
+  document.querySelectorAll('.loading-step').forEach(s => s.classList.remove('show'));
+
+  window.scrollTo(0, 0);
+}
+
+// ── RECORDS ──
+function renderRecords() {
+  const list = document.getElementById('recordsList');
+  if (records.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">📂</div>
+      <div class="empty-text">No saved records yet.<br>Complete a review and tap Save Record.</div>
+    </div>`;
+    return;
+  }
+  list.innerHTML = records.map((r, i) => `
+    <div class="record-card" onclick="openRecord(${i})">
+      <div class="record-top">
+        <div class="record-dept">${r.dept}</div>
+        <div class="record-date">${formatDate(r.date)}</div>
+      </div>
+      <div class="record-meta">${r.ref} · ${r.pages} page${r.pages>1?'s':''}</div>
+      <div class="record-verdict">
+        <span class="verdict-badge ${r.verdict==='APPROVE'?'verdict-approve':r.verdict==='RETURN'?'verdict-return':'verdict-conditional'}">
+          ${r.verdict}
+        </span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openRecord(i) {
+  const r = records[i];
+  const modal = document.getElementById('recordModal');
+  const content = document.getElementById('recordModalContent');
+
+  content.innerHTML = `
+    <div class="modal-title">${r.dept}</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:14px">${r.ref} · ${r.pages} pages · ${formatDate(r.date)}</div>
+    <div style="margin-bottom:12px">
+      <span class="verdict-badge ${r.verdict==='APPROVE'?'verdict-approve':r.verdict==='RETURN'?'verdict-return':'verdict-conditional'}">${r.verdict}</span>
+    </div>
+    <div class="criteria-results">
+      ${(r.criteria||[]).map(c => `
+        <div class="criteria-card">
+          <div class="criteria-card-header">
+            <div class="criteria-card-title">${statusIcon(c.status)} ${c.name}</div>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--muted)">${c.status}</span>
+          </div>
+          <div class="criteria-card-body open">
+            <div>${c.finding}</div>
+            ${c.flags&&c.flags.length?`<div class="flag-list">${c.flags.map(f=>`<div class="flag-item"><span class="flag-bullet">⚠</span><span>${f}</span></div>`).join('')}</div>`:''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="summary-box" style="margin-top:12px">
+      <div class="summary-box-title">OFAM RECOMMENDATION</div>
+      <div class="summary-box-text">${r.summary}</div>
+    </div>
+    <div class="action-row" style="margin-top:12px">
+      <button class="btn-secondary" onclick="deleteRecord(${i})">Delete</button>
+      <button class="btn-save" onclick="copyRecord(${i})">Copy Text</button>
+    </div>
+  `;
+  modal.classList.add('active');
+}
+
+function deleteRecord(i) {
+  records.splice(i, 1);
+  localStorage.setItem('fap_records', JSON.stringify(records));
+  closeRecordModal();
+  renderRecords();
+  showToast('Record deleted');
+}
+
+function copyRecord(i) {
+  const r = records[i];
+  const text = [
+    `FAP REVIEW — ${r.dept}`,
+    `Ref: ${r.ref} | Date: ${formatDate(r.date)} | Pages: ${r.pages}`,
+    `Verdict: ${r.verdict}`,
+    '',
+    ...( r.criteria||[]).map(c => `[${c.status}] ${c.name}: ${c.finding}${c.flags&&c.flags.length?'\n  Flags: '+c.flags.join('; '):''}` ),
+    '',
+    `RECOMMENDATION: ${r.summary}`
+  ].join('\n');
+  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard ✓'));
+}
+
+function clearAllRecords() {
+  if (!confirm('Delete all saved records?')) return;
+  records = [];
+  localStorage.setItem('fap_records', '[]');
+  closeSettings();
+  renderRecords();
+  showToast('All records cleared');
+}
+
+// ── MODALS ──
+function openSettings() {
+  document.getElementById('apiKeyInput').value = getApiKey();
+  document.getElementById('settingsModal').classList.add('active');
+}
+function closeSettings(e) {
+  if (!e || e.target === document.getElementById('settingsModal')) {
+    document.getElementById('settingsModal').classList.remove('active');
+  }
+}
+function closeRecordModal(e) {
+  if (!e || e.target === document.getElementById('recordModal')) {
+    document.getElementById('recordModal').classList.remove('active');
+  }
+}
+
+// ── TOAST ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── UTILS ──
+function formatDate(iso) {
+  return new Date(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
+// ── INIT ──
+if (!getApiKey()) {
+  setTimeout(() => showToast('Tap ⚙️ to add your API key'), 800);
+}
+</script>
+</body>
+</html>
