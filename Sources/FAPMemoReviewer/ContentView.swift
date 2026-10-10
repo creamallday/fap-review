@@ -65,6 +65,11 @@ private struct ComposeView: View {
                     .help("Edit review profiles")
                     .accessibilityLabel("Edit review profiles")
                 }
+                if let count = model.selectedProfile?.documents.count, count > 0 {
+                    Text("Includes \(count) criteria document\(count == 1 ? "" : "s")")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {

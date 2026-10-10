@@ -43,6 +43,7 @@ final class AppModel {
         static let profile = "selectedProfile", author = "reviewerName", model = "model"
         static let claudePath = "claudePath", outputFolder = "outputFolder"
     }
+    static let defaultReviewerName = "Chris Holm"
     var reviewerName: String { didSet { defaults.set(reviewerName, forKey: Keys.author) } }
     var model: String { didSet { defaults.set(model, forKey: Keys.model) } }
     var claudePath: String { didSet { defaults.set(claudePath, forKey: Keys.claudePath); Task { await refreshConnection() } } }
@@ -56,7 +57,9 @@ final class AppModel {
 
     private init() {
         profiles = store.load()
-        reviewerName = defaults.string(forKey: Keys.author) ?? "Claude"
+        // "Claude" was the earlier default; treat it as unset so the new default applies.
+        let storedName = defaults.string(forKey: Keys.author)
+        reviewerName = (storedName == nil || storedName == "Claude") ? Self.defaultReviewerName : storedName!
         model = defaults.string(forKey: Keys.model) ?? ""
         claudePath = defaults.string(forKey: Keys.claudePath) ?? ""
         outputFolder = defaults.string(forKey: Keys.outputFolder) ?? ""

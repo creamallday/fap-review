@@ -67,13 +67,85 @@ private struct ProfilesSettings: View {
             .padding(.leading, 20)
         }
         .padding(20)
-        .frame(height: 440)
+        .frame(height: 580)
         .onAppear { selection = selection ?? model.selectedProfile?.id }
     }
 }
 
 private struct ProfileEditor: View {
     @Binding var profile: ReviewProfile
+    @State private var isImporting = false
+    @State private var isTargeted = false
+    @State private var importError: String?
+
+    private func add(_ urls: [URL]) {
+        var problems: [String] = []
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                profile.documents.append(try CriteriaImporter.document(from: url))
+            } catch {
+                problems.append(error.localizedDescription)
+            }
+        }
+        importError = problems.isEmpty ? nil : problems.joined(separator: "\n")
+    }
+
+    private var documentsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Criteria Documents").font(.headline)
+                Spacer()
+                Button("Add Files…") { isImporting = true }
+            }
+            Text("Upload policy excerpts or checklists (.docx, .pdf, .txt, .md). Their text is added to every review that uses this profile. Replace a file by removing it and adding the newer version.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 0) {
+                if profile.documents.isEmpty {
+                    Text("Drop files here")
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                } else {
+                    ForEach(profile.documents) { doc in
+                        HStack(spacing: 8) {
+                            Image(systemName: "doc.text").foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(doc.name).lineLimit(1).truncationMode(.middle)
+                                Text("\(doc.text.count.formatted()) characters · added \(doc.addedAt.formatted(date: .abbreviated, time: .omitted))")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button {
+                                profile.documents.removeAll { $0.id == doc.id }
+                            } label: { Image(systemName: "minus.circle.fill").foregroundStyle(.secondary) }
+                                .buttonStyle(.plain)
+                                .help("Remove “\(doc.name)”")
+                                .accessibilityLabel("Remove \(doc.name)")
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        if doc.id != profile.documents.last?.id { Divider() }
+                    }
+                }
+            }
+            .background(isTargeted ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(isTargeted ? Color.accentColor : Color.primary.opacity(0.12)))
+            .dropDestination(for: URL.self) { urls, _ in
+                let files = urls.filter(\.isFileURL)
+                add(files)
+                return !files.isEmpty
+            } isTargeted: { isTargeted = $0 }
+            if let importError {
+                Text(importError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            }
+        }
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: CriteriaImporter.contentTypes,
+                      allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { add(urls) }
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -89,11 +161,13 @@ private struct ProfileEditor: View {
                     .foregroundStyle(.secondary)
                 TextEditor(text: $profile.criteria)
                     .font(.body)
+                    .frame(minHeight: 120)
                     .scrollContentBackground(.hidden)
                     .padding(6)
                     .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color.primary.opacity(0.12)))
             }
+            documentsSection
             Text("Saved automatically on this Mac only.")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
@@ -110,7 +184,7 @@ private struct GeneralSettings: View {
         @Bindable var model = model
         Form {
             Section {
-                TextField("Name on tracked changes", text: $model.reviewerName, prompt: Text("Claude"))
+                TextField("Name on tracked changes", text: $model.reviewerName, prompt: Text(AppModel.defaultReviewerName))
             } footer: {
                 Text("Shown as the author of each tracked change and comment in Word.")
                     .font(.caption).foregroundStyle(.secondary)

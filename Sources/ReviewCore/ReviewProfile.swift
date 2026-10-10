@@ -1,15 +1,41 @@
 import Foundation
 
+/// A reference file (policy excerpt, checklist, prior guidance) whose text is added to a profile.
+/// Only the extracted text is kept, so the original file can move or change without effect.
+public struct CriteriaDocument: Codable, Identifiable, Hashable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var text: String
+    public var addedAt: Date
+
+    public init(id: UUID = UUID(), name: String, text: String, addedAt: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.text = text
+        self.addedAt = addedAt
+    }
+}
+
 /// A saved set of screening criteria. Stored only on this Mac.
 public struct ReviewProfile: Codable, Identifiable, Hashable, Sendable {
     public var id: UUID
     public var name: String
     public var criteria: String
+    public var documents: [CriteriaDocument]
 
-    public init(id: UUID = UUID(), name: String, criteria: String) {
+    public init(id: UUID = UUID(), name: String, criteria: String, documents: [CriteriaDocument] = []) {
         self.id = id
         self.name = name
         self.criteria = criteria
+        self.documents = documents
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        criteria = try c.decode(String.self, forKey: .criteria)
+        documents = try c.decodeIfPresent([CriteriaDocument].self, forKey: .documents) ?? []
     }
 
     /// Starting point carried over from the earlier FAP Review web app. Edit it in Settings.
