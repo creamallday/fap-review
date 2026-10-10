@@ -24,6 +24,8 @@ enum ProcessRunner {
 
     static func run(executable: URL, arguments: [String], environment: [String: String]? = nil,
                     stdin: Data? = nil, workingDirectory: URL? = nil, timeout: TimeInterval) async throws -> Output {
+        // Writing the prompt to a process that already exited must not kill the app.
+        signal(SIGPIPE, SIG_IGN)
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments

@@ -206,7 +206,8 @@ public final class ClaudeCLI: @unchecked Sendable {
            let plan = try? decoder.decode(ReviewPlan.self, from: Data(resultText[start...end].utf8)) {
             return plan
         }
-        throw ReviewError.claude("Claude’s reply couldn’t be understood. Please try again.")
+        let snippet = String(resultText.prefix(300))
+        throw ReviewError.claude("Claude’s reply couldn’t be understood. Please try again.\n\nDetails: exit status \(output.status)\(snippet.isEmpty ? "" : ", reply began: \(snippet)")")
     }
 
     static func friendly(_ message: String) -> String {

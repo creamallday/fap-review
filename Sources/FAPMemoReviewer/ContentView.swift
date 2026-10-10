@@ -16,10 +16,10 @@ struct ContentView: View {
                 switch model.phase {
                 case .idle:
                     ComposeView()
-                case .reviewing(let stage):
-                    ProgressPanel(stage: stage)
-                case .finished(let outcome):
-                    ResultPanel(outcome: outcome)
+                case .reviewing(let progress):
+                    ProgressPanel(progress: progress)
+                case .finished(let items):
+                    ResultsPanel(items: items)
                 case .failed(let message):
                     ErrorPanel(message: message)
                 }
@@ -116,13 +116,13 @@ private struct ComposeView: View {
                 Button {
                     model.startReview()
                 } label: {
-                    Text("Review").frame(minWidth: 88)
+                    Text(model.documents.count > 1 ? "Review \(model.documents.count) Documents" : "Review").frame(minWidth: 88)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(!model.canReview)
-                .help(model.document == nil ? "Add a Word document first" : "Review with Claude (⌘↩)")
+                .help(model.documents.isEmpty ? "Add a Word document first" : "Review with Claude (⌘↩)")
             }
         }
     }
@@ -137,10 +137,10 @@ private struct ComposeView: View {
 
 private struct ProgressPanel: View {
     @Environment(AppModel.self) private var model
-    let stage: ReviewStage
+    let progress: AppModel.BatchProgress
 
     private var title: String {
-        switch stage {
+        switch progress.stage {
         case .reading: return "Reading the document…"
         case .reviewing: return "Claude is reviewing…"
         case .refining: return "Double-checking suggestions…"
@@ -149,7 +149,8 @@ private struct ProgressPanel: View {
     }
 
     private var detail: String {
-        switch stage {
+        if progress.total > 1 { return "Document \(progress.index) of \(progress.total)" }
+        switch progress.stage {
         case .reviewing, .refining: return "This usually takes under a minute."
         default: return ""
         }
@@ -157,12 +158,16 @@ private struct ProgressPanel: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            if let document = model.document {
-                DocumentBadge(url: document)
+            Text(progress.name)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if progress.total > 1 {
+                ProgressView(value: Double(progress.index - 1), total: Double(progress.total))
+                    .frame(maxWidth: 280)
+            } else {
+                ProgressView().controlSize(.large).padding(.top, 6)
             }
-            ProgressView()
-                .controlSize(.large)
-                .padding(.top, 6)
             VStack(spacing: 4) {
                 Text(title).font(.title3.weight(.medium)).contentTransition(.opacity)
                 Text(detail).font(.callout).foregroundStyle(.secondary)
@@ -176,9 +181,110 @@ private struct ProgressPanel: View {
     }
 }
 
-// MARK: - Result
+// MARK: - Results
 
-private struct ResultPanel: View {
+private struct ResultsPanel: View {
+    @Environment(AppModel.self) private var model
+    let items: [AppModel.BatchItem]
+
+    var body: some View {
+        if items.count == 1 {
+            switch items[0].result {
+            case .success(let outcome): SingleResult(outcome: outcome)
+            case .failure(let failure): ErrorPanel(message: failure.message, details: failure.details, retry: items)
+            }
+        } else {
+            BatchResult(items: items)
+        }
+    }
+}
+
+private func count(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
+
+private struct BatchResult: View {
+    @Environment(AppModel.self) private var model
+    let items: [AppModel.BatchItem]
+
+    private var outcomes: [ReviewOutcome] { items.compactMap { if case .success(let o) = $0.result { return o } else { return nil } } }
+    private var failures: Int { items.count - outcomes.count }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            VStack(spacing: 8) {
+                Image(systemName: failures == 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                    .font(.system(size: 42))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, failures == 0 ? Color.green : Color.orange)
+                Text(failures == 0 ? "Reviews Complete" : "Some Reviews Didn’t Finish").font(.title2.weight(.semibold))
+                Text("\(outcomes.count) of \(items.count) reviewed" + (failures > 0 ? " · \(failures) failed" : ""))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(items) { item in
+                        row(item)
+                        if item.id != items.last?.id { Divider() }
+                    }
+                }
+            }
+            .frame(maxHeight: 280)
+            .fixedSize(horizontal: false, vertical: true)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+
+            HStack {
+                Button("Review More") { model.reset() }.controlSize(.large)
+                if failures > 0 {
+                    Button("Retry Failed") { model.retryFailed(items) }.controlSize(.large)
+                }
+                Spacer()
+                if !outcomes.isEmpty {
+                    Button {
+                        model.openInWord(outcomes.map(\.output))
+                    } label: {
+                        Text(AppModel.wordURL == nil ? "Open All" : "Open All in Word").frame(minWidth: 100)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ item: AppModel.BatchItem) -> some View {
+        switch item.result {
+        case .success(let outcome):
+            HStack(spacing: 10) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: outcome.output.path)).resizable().frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(outcome.output.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                    Text("\(count(outcome.report.trackedChanges, "tracked change")) · \(count(outcome.report.comments, "comment"))"
+                         + (outcome.report.skipped.isEmpty ? "" : " · \(outcome.report.skipped.count) left out"))
+                        .font(.caption)
+                        .foregroundStyle(outcome.report.skipped.isEmpty ? Color.secondary : Color.orange)
+                }
+                Spacer()
+                Button("Show") { model.showInFinder(outcome.output) }.controlSize(.small)
+                Button("Open") { model.openInWord(outcome.output) }.controlSize(.small)
+            }
+            .padding(10)
+        case .failure(let failure):
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).frame(width: 30, height: 30)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.source.lastPathComponent).lineLimit(1).truncationMode(.middle)
+                    Text(failure.message).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+        }
+    }
+}
+
+private struct SingleResult: View {
     @Environment(AppModel.self) private var model
     let outcome: ReviewOutcome
     @State private var showSkipped = false
@@ -274,8 +380,6 @@ private struct ResultPanel: View {
             }
         }
     }
-
-    private func count(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
 }
 
 // MARK: - Error
@@ -283,6 +387,9 @@ private struct ResultPanel: View {
 private struct ErrorPanel: View {
     @Environment(AppModel.self) private var model
     let message: String
+    var details: String?
+    var retry: [AppModel.BatchItem]?
+    @State private var showDetails = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -298,16 +405,34 @@ private struct ErrorPanel: View {
             Text("No reviewed copy was saved, and your original document is unchanged.")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
+            if let details, !details.isEmpty {
+                DisclosureGroup("Technical details", isExpanded: $showDetails) {
+                    VStack(alignment: .trailing, spacing: 6) {
+                        ScrollView {
+                            Text(details)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 90)
+                        Button("Copy Details") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(message + "\n\n" + details, forType: .string)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .font(.callout)
+            }
             HStack {
                 Button("Start Over") { model.reset() }.controlSize(.large)
                 Button("Try Again") {
-                    model.dismissError()
-                    model.startReview()
+                    if let retry { model.retryFailed(retry) } else { model.dismissError(); model.startReview() }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
-                .disabled(model.document == nil)
+                .disabled(retry == nil && model.documents.isEmpty)
             }
             .padding(.top, 4)
         }

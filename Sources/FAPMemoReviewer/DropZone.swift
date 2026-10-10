@@ -3,70 +3,98 @@ import Combine
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The large target for a Word document: drop a file on it, or click to choose one.
+/// The large target for Word documents: drop files on it, or click to choose them.
 struct DropZone: View {
     @Environment(AppModel.self) private var model
     @State private var isTargeted = false
     @State private var isImporting = false
 
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isTargeted ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.035))
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(isTargeted ? Color.accentColor : Color.primary.opacity(model.document == nil ? 0.18 : 0.10),
-                              style: StrokeStyle(lineWidth: isTargeted ? 2 : 1.25, dash: model.document == nil ? [6, 4] : []))
+    private var isEmpty: Bool { model.documents.isEmpty }
 
-            if let document = model.document {
-                HStack(spacing: 14) {
-                    DocumentBadge(url: document, large: true)
-                    Spacer(minLength: 0)
-                    Button("Replace…") { isImporting = true }
-                    Button {
-                        withAnimation(.spring(duration: 0.3)) { model.document = nil }
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title3)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isTargeted ? Color.accentColor.opacity(0.10) : Color.primary.opacity(0.035))
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(isTargeted ? Color.accentColor : Color.primary.opacity(isEmpty ? 0.18 : 0.10),
+                                  style: StrokeStyle(lineWidth: isTargeted ? 2 : 1.25, dash: isEmpty ? [6, 4] : []))
+
+                if isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "doc.badge.plus")
+                            .font(.system(size: 34, weight: .light))
+                            .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
+                            .symbolEffect(.bounce, value: isTargeted)
+                        Text("Drop Word documents here")
+                            .font(.title3.weight(.medium))
+                        Text("or click to choose one or more .docx files")
+                            .font(.callout)
                             .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .help("Remove document")
-                    .accessibilityLabel("Remove document")
+                    .transition(.opacity)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(model.documents, id: \.self) { url in
+                                HStack(spacing: 8) {
+                                    DocumentBadge(url: url, large: model.documents.count == 1)
+                                    Spacer(minLength: 0)
+                                    Button {
+                                        model.removeDocument(url)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.title3)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove “\(url.lastPathComponent)”")
+                                    .accessibilityLabel("Remove \(url.lastPathComponent)")
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, model.documents.count == 1 ? 20 : 8)
+                                if url != model.documents.last { Divider().padding(.leading, 16) }
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 200)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
                 }
-                .padding(.horizontal, 18)
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-            } else {
-                VStack(spacing: 10) {
-                    Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 34, weight: .light))
-                        .foregroundStyle(isTargeted ? Color.accentColor : .secondary)
-                        .symbolEffect(.bounce, value: isTargeted)
-                    Text("Drop a Word document here")
-                        .font(.title3.weight(.medium))
-                    Text("or click to choose a .docx file")
+            }
+            .frame(minHeight: isEmpty ? 170 : 0)
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .onTapGesture { if isEmpty { isImporting = true } }
+
+            if !isEmpty {
+                HStack {
+                    Button("Add More…") { isImporting = true }
+                    if model.documents.count > 1 {
+                        Button("Clear All") { model.clearDocuments() }
+                    }
+                    Spacer()
+                    Text("\(model.documents.count) document\(model.documents.count == 1 ? "" : "s")")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
-                .transition(.opacity)
+                .controlSize(.small)
+            }
+            if let notice = model.notice {
+                Text(notice).font(.caption).foregroundStyle(.orange)
             }
         }
-        .frame(height: model.document == nil ? 170 : 92)
-        .contentShape(RoundedRectangle(cornerRadius: 14))
-        .onTapGesture { if model.document == nil { isImporting = true } }
         .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first(where: { $0.isFileURL }) else { return false }
-            return model.setDocument(url)
+            model.addDocuments(urls)
         } isTargeted: { targeted in
             withAnimation(.easeOut(duration: 0.15)) { isTargeted = targeted }
         }
-        .fileImporter(isPresented: $isImporting, allowedContentTypes: [AppModel.wordType]) { result in
-            if case .success(let url) = result { model.setDocument(url) }
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [AppModel.wordType], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { model.addDocuments(urls) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .chooseDocument)) { _ in isImporting = true }
-        .animation(.spring(duration: 0.3), value: model.document)
+        .animation(.spring(duration: 0.3), value: model.documents)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(model.document == nil ? "Document drop zone. Click to choose a Word document." : "Selected document")
-        .accessibilityAddTraits(model.document == nil ? .isButton : [])
+        .accessibilityLabel(isEmpty ? "Document drop zone. Click to choose Word documents." : "Selected documents")
     }
 }
 

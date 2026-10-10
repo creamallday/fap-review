@@ -24,7 +24,7 @@ If Claude Code isn't installed or signed in, the app shows a banner with an **In
 
 | | |
 |---|---|
-| **Document** | Drop a `.docx` on the window, click the drop area, use **File › Open Document…** (⌘O), or right-click a file in Finder and choose **Open With › FAP Memo Reviewer**. |
+| **Documents** | Drop one or more `.docx` files on the window (up to 25), click the drop area, use **File › Open Documents…** (⌘O), or right-click a file in Finder and choose **Open With › FAP Memo Reviewer**. |
 | **Review profile** | Your saved screening criteria. Edit them under **FAP Memo Reviewer › Settings › Profiles** (⌘,). A starting **FAP Screening** profile is included, carried over from the earlier web version. Check it against current policy before relying on it. |
 | **Criteria documents** | Attach policy excerpts or checklists (.docx, .pdf, .txt, .md) to a profile under **Settings › Profiles › Criteria Documents** by clicking **Add Files…** or dropping them in. Their text is added to every review using that profile. To update one, remove it and add the newer version. |
 | **Instructions** | Optional notes for this memo only, e.g. "Focus on the utilization figures." |

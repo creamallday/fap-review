@@ -16,7 +16,7 @@ struct FAPMemoReviewerApp: App {
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Open Document…") { NotificationCenter.default.post(name: .chooseDocument, object: nil) }
+                Button("Open Documents…") { NotificationCenter.default.post(name: .chooseDocument, object: nil) }
                     .keyboardShortcut("o")
                     .disabled(model.isReviewing)
             }
@@ -46,7 +46,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Finder "Open With" and drops onto the Dock icon.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let url = urls.first else { return }
-        Task { @MainActor in AppModel.shared.setDocument(url) }
+        Task { @MainActor in AppModel.shared.addDocuments(urls) }
     }
 }

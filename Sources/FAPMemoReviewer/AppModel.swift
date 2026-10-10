@@ -9,16 +9,38 @@ import UniformTypeIdentifiers
 final class AppModel {
     static let shared = AppModel()
 
+    struct BatchProgress: Equatable {
+        var stage: ReviewStage
+        var index: Int
+        var total: Int
+        var name: String
+    }
+
+    struct ItemFailure: Error {
+        var message: String
+        var details: String
+    }
+
+    struct BatchItem: Identifiable {
+        let id = UUID()
+        let source: URL
+        let result: Result<ReviewOutcome, ItemFailure>
+    }
+
     enum Phase {
         case idle
-        case reviewing(ReviewStage)
-        case finished(ReviewOutcome)
+        case reviewing(BatchProgress)
+        case finished([BatchItem])
         case failed(String)
     }
 
+    static let maxDocuments = 25
+
     // MARK: Review state
 
-    var document: URL?
+    var documents: [URL] = []
+    /// Brief note about files that couldn't be added.
+    var notice: String?
     var instructions = ""
     var phase: Phase = .idle
     @ObservationIgnored private var reviewTask: Task<Void, Never>?
@@ -78,57 +100,119 @@ final class AppModel {
 
     static let wordType = UTType(filenameExtension: "docx") ?? .data
 
+    /// Adds Word documents to the list. Anything else is skipped with a notice.
     @discardableResult
-    func setDocument(_ url: URL) -> Bool {
+    func addDocuments(_ urls: [URL]) -> Bool {
         guard !isReviewing else { return false }
-        guard url.pathExtension.lowercased() == "docx" else {
-            phase = .failed("“\(url.lastPathComponent)” isn’t a Word document. Choose a .docx file.")
-            return false
+        let files = urls.filter(\.isFileURL).map(\.standardizedFileURL)
+        // New files after finished results start a fresh batch.
+        var list = documents
+        if case .finished = phase { list = [] }
+        var skipped = 0, added = 0
+        for url in files {
+            guard url.pathExtension.lowercased() == "docx", !url.lastPathComponent.hasPrefix("~$") else { skipped += 1; continue }
+            guard !list.contains(url) else { continue }
+            guard list.count < Self.maxDocuments else { skipped += 1; continue }
+            list.append(url)
+            added += 1
         }
         withAnimation(.spring(duration: 0.3)) {
-            document = url
+            documents = list
             phase = .idle
+            notice = skipped == 0 ? nil
+                : "\(skipped) file\(skipped == 1 ? " was" : "s were") skipped. Only Word documents (.docx) can be reviewed, up to \(Self.maxDocuments) at a time."
         }
-        return true
+        return added > 0 || (skipped == 0 && !files.isEmpty)
+    }
+
+    func removeDocument(_ url: URL) {
+        withAnimation(.spring(duration: 0.3)) {
+            documents.removeAll { $0 == url }
+            notice = nil
+        }
+    }
+
+    func clearDocuments() {
+        withAnimation(.spring(duration: 0.3)) { documents = []; notice = nil }
     }
 
     var canReview: Bool {
-        document != nil && selectedProfile != nil && !isReviewing && connection?.isReady == true
+        !documents.isEmpty && selectedProfile != nil && !isReviewing && connection?.isReady == true
     }
 
     // MARK: Reviewing
 
     func startReview() {
-        guard canReview, let document, let profile = selectedProfile else { return }
-        let request = ReviewRequest(
-            source: document, profile: profile, instructions: instructions, author: reviewerName,
-            outputDirectory: outputFolder.isEmpty ? nil : URL(fileURLWithPath: outputFolder, isDirectory: true))
+        guard canReview, let profile = selectedProfile else { return }
+        let sources = documents
+        let folder = outputFolder.isEmpty ? nil : URL(fileURLWithPath: outputFolder, isDirectory: true)
+        let instructions = instructions, author = reviewerName
         let cli = ClaudeCLI(customPath: claudePath.isEmpty ? nil : claudePath, model: model.isEmpty ? nil : model)
-        phase = .reviewing(.reading)
+        notice = nil
+        phase = .reviewing(BatchProgress(stage: .reading, index: 1, total: sources.count, name: sources[0].lastPathComponent))
 
         reviewTask = Task { [weak self] in
-            do {
-                let outcome = try await ReviewPipeline.run(request, provider: cli) { stage in
-                    Task { @MainActor in AppModel.shared.showStage(stage) }
+            var items: [BatchItem] = []
+            var stopReason: String?
+            for (i, source) in sources.enumerated() {
+                if Task.isCancelled { return }
+                if let stopReason {
+                    items.append(BatchItem(source: source, result: .failure(ItemFailure(message: stopReason, details: "Not reviewed."))))
+                    continue
                 }
-                guard !Task.isCancelled else { return }
-                withAnimation(.spring(duration: 0.35)) { self?.phase = .finished(outcome) }
-                NSSound(named: "Glass")?.play()
-            } catch is CancellationError {
-                self?.phase = .idle
-            } catch ReviewError.cancelled {
-                self?.phase = .idle
-            } catch {
-                guard !Task.isCancelled else { return }
-                withAnimation { self?.phase = .failed(error.localizedDescription) }
-                Task { await self?.refreshConnection() }
+                let request = ReviewRequest(source: source, profile: profile, instructions: instructions,
+                                            author: author, outputDirectory: folder)
+                let name = source.lastPathComponent
+                await MainActor.run {
+                    self?.showStage(BatchProgress(stage: .reading, index: i + 1, total: sources.count, name: name))
+                }
+                do {
+                    let outcome = try await ReviewPipeline.run(request, provider: cli) { stage in
+                        Task { @MainActor in
+                            AppModel.shared.showStage(BatchProgress(stage: stage, index: i + 1, total: sources.count, name: name))
+                        }
+                    }
+                    items.append(BatchItem(source: source, result: .success(outcome)))
+                } catch is CancellationError {
+                    return
+                } catch ReviewError.cancelled {
+                    return
+                } catch {
+                    if Task.isCancelled { return }
+                    items.append(BatchItem(source: source, result: .failure(
+                        ItemFailure(message: error.localizedDescription, details: String(describing: error)))))
+                    // A problem with Claude itself (limit reached, signed out) would repeat for every file.
+                    if case ReviewError.claude = error {
+                        stopReason = "Not reviewed because Claude stopped responding on an earlier document."
+                    }
+                }
+            }
+            guard !Task.isCancelled else { return }
+            let finished = items
+            await MainActor.run {
+                withAnimation(.spring(duration: 0.35)) { self?.phase = .finished(finished) }
+                if finished.contains(where: { if case .success = $0.result { return true } else { return false } }) {
+                    NSSound(named: "Glass")?.play()
+                }
+            }
+            if finished.contains(where: { if case .failure = $0.result { return true } else { return false } }) {
+                await self?.refreshConnection()
             }
         }
     }
 
-    private func showStage(_ stage: ReviewStage) {
+    private func showStage(_ progress: BatchProgress) {
         guard isReviewing else { return }
-        withAnimation(.easeInOut(duration: 0.2)) { phase = .reviewing(stage) }
+        withAnimation(.easeInOut(duration: 0.2)) { phase = .reviewing(progress) }
+    }
+
+    /// Reviews again only the documents that failed.
+    func retryFailed(_ items: [BatchItem]) {
+        let failed = items.compactMap { item -> URL? in if case .failure = item.result { return item.source } else { return nil } }
+        guard !failed.isEmpty else { return }
+        documents = failed
+        phase = .idle
+        startReview()
     }
 
     func cancelReview() {
@@ -140,7 +224,8 @@ final class AppModel {
     /// Back to the start, ready for the next document.
     func reset() {
         withAnimation(.spring(duration: 0.35)) {
-            document = nil
+            documents = []
+            notice = nil
             instructions = ""
             phase = .idle
         }
@@ -154,13 +239,15 @@ final class AppModel {
 
     static var wordURL: URL? { NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.Word") }
 
-    func openInWord(_ url: URL) {
+    func openInWord(_ urls: [URL]) {
         if let word = Self.wordURL {
-            NSWorkspace.shared.open([url], withApplicationAt: word, configuration: NSWorkspace.OpenConfiguration())
+            NSWorkspace.shared.open(urls, withApplicationAt: word, configuration: NSWorkspace.OpenConfiguration())
         } else {
-            NSWorkspace.shared.open(url)
+            urls.forEach { NSWorkspace.shared.open($0) }
         }
     }
+
+    func openInWord(_ url: URL) { openInWord([url]) }
 
     func showInFinder(_ url: URL) {
         NSWorkspace.shared.activateFileViewerSelecting([url])
