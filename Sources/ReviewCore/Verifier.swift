@@ -3,8 +3,35 @@ import Foundation
 import FoundationXML
 #endif
 
+/// A failed check that points at one paragraph. The engine can leave out the suggestions touching
+/// that paragraph and try again, and the details help diagnose the cause.
+struct VerificationFailure: Error {
+    var paragraph: Int
+    var message: String
+    var detail: String
+
+    var reviewError: ReviewError { .verificationFailed(message + "\n\n" + detail) }
+
+    /// Describes where two paragraph texts first differ, with invisible characters spelled out.
+    static func describe(expected: [Unicode.Scalar], actual: [Unicode.Scalar]) -> String {
+        var i = 0
+        while i < expected.count && i < actual.count && expected[i] == actual[i] { i += 1 }
+        func show(_ a: [Unicode.Scalar]) -> String {
+            let lo = max(0, i - 30), hi = min(a.count, i + 30)
+            return a[lo..<hi].map { s -> String in
+                (s.value >= 0x20 && s.value < 0x7F) || s.value == 0x2019 ? String(s) : String(format: "<U+%04X>", s.value)
+            }.joined()
+        }
+        return "first difference at character \(i) (expected \(expected.count) characters, found \(actual.count))\n"
+            + "expected: …\(show(expected))…\nfound:    …\(show(actual))…"
+    }
+}
+
 /// Re-reads a freshly written copy from disk and proves it is what we meant to produce.
 enum Verifier {
+    /// Test hook: paragraphs for which the next check reports a failure, once each.
+    nonisolated(unsafe) static var injectedFailures: Set<Int> = []
+
     static func verify(output: URL, original: LoadedDocument, session: RedlineSession, expected: ResolvedPlan) throws {
         func fail(_ detail: String) -> ReviewError { .verificationFailed(detail) }
 
@@ -33,20 +60,30 @@ enum Verifier {
             throw fail("The document body went missing.")
         }
         let ours = Set(session.revisionIDs)
+        let touched = Set(expected.edits.map(\.paragraph))
+        if let p = Verifier.injectedFailures.sorted().first(where: { touched.contains($0) }) {
+            Verifier.injectedFailures.remove(p)
+            throw VerificationFailure(paragraph: p, message: "Injected failure in paragraph \(p).", detail: "test")
+        }
 
         // 3. Rejecting our revisions restores the original text exactly, paragraph by paragraph.
         var rejecting = ParagraphScanner(names: names, view: RevisionView(
             showInsertion: { !ours.contains($0 ?? "") }, showDeletion: { ours.contains($0 ?? "") }))
-        let rejected = rejecting.scanBody(body).map(\.text)
+        let rejectedModels = rejecting.scanBody(body)
+        let rejected = rejectedModels.map(\.text)
         guard rejected.count == original.originalTexts.count else { throw fail("The paragraph count changed.") }
         for (i, text) in rejected.enumerated() where text != original.originalTexts[i] {
-            throw fail("Paragraph \(i) no longer matches the original when the changes are rejected.")
+            throw VerificationFailure(
+                paragraph: i, message: "Paragraph \(i) no longer matches the original when the changes are rejected.",
+                detail: VerificationFailure.describe(expected: original.originalTexts[i], actual: text)
+                    + "\nparagraph XML: " + String(rejectedModels[i].element.xmlString.prefix(2500)))
         }
 
         // 4. Accepting our revisions produces exactly the intended text.
         var accepting = ParagraphScanner(names: names, view: RevisionView(
             showInsertion: { _ in true }, showDeletion: { _ in false }))
-        let accepted = accepting.scanBody(body).map(\.text)
+        let acceptedModels = accepting.scanBody(body)
+        let accepted = acceptedModels.map(\.text)
         // Apply every hunk of a paragraph from the end backwards so earlier offsets stay valid,
         // regardless of which suggestion each hunk came from.
         var intended = original.originalTexts
@@ -65,7 +102,10 @@ enum Verifier {
         }
         guard accepted.count == intended.count else { throw fail("The paragraph count changed.") }
         for (i, text) in accepted.enumerated() where text != intended[i] {
-            throw fail("Paragraph \(i) doesn’t read as intended when the changes are accepted.")
+            throw VerificationFailure(
+                paragraph: i, message: "Paragraph \(i) doesn’t read as intended when the changes are accepted.",
+                detail: VerificationFailure.describe(expected: intended[i], actual: text)
+                    + "\nparagraph XML: " + String(acceptedModels[i].element.xmlString.prefix(2500)))
         }
 
         // 5. Each revision and comment is present exactly once and fully linked.

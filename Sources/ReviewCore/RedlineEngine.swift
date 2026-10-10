@@ -73,36 +73,66 @@ public enum RedlineEngine {
             throw ReviewError.outputLocation("A file named “\(dst.lastPathComponent)” already exists.")
         }
 
-        let loaded = try LoadedDocument(url: src)
-        var session = RedlineSession(loaded: loaded, options: options)
-        let resolved = session.resolve(plan)
-        try session.apply(resolved)
-
-        if session.revisionIDs.isEmpty && session.commentIDs.isEmpty {
-            if resolved.skipped.isEmpty {
-                throw ReviewError.claude("Claude didn’t suggest any changes or comments for this document.")
+        // If the integrity check pins a problem on one paragraph, leave out the suggestions that
+        // touch it, say so in the report, and try again rather than discarding the whole review.
+        var excluded = Set<Int>()
+        var lastFailure: VerificationFailure?
+        for _ in 0..<10 {
+            let loaded = try LoadedDocument(url: src)
+            var session = RedlineSession(loaded: loaded, options: options)
+            var resolved = session.resolve(plan)
+            for p in excluded.sorted() {
+                for e in resolved.edits where e.paragraph == p {
+                    resolved.skipped.append(SkippedItem(kind: .edit, paragraph: p, excerpt: loaded.excerpt(p, e.extent.lowerBound..<e.extent.upperBound),
+                                                        reason: RedlineEngine.integrityReason))
+                }
+                for c in resolved.comments where c.paragraph == p {
+                    resolved.skipped.append(SkippedItem(kind: .comment, paragraph: p, excerpt: loaded.excerpt(p, c.range),
+                                                        reason: RedlineEngine.integrityReason))
+                }
             }
-            throw ReviewError.verificationFailed(
-                "None of Claude’s \(resolved.skipped.count) suggestions could be placed in the document reliably.")
+            resolved.edits.removeAll { excluded.contains($0.paragraph) }
+            resolved.comments.removeAll { excluded.contains($0.paragraph) }
+            try session.apply(resolved)
+
+            if session.revisionIDs.isEmpty && session.commentIDs.isEmpty {
+                if let lastFailure { throw lastFailure.reviewError }
+                if resolved.skipped.isEmpty {
+                    throw ReviewError.claude("Claude didn’t suggest any changes or comments for this document.")
+                }
+                throw ReviewError.verificationFailed(
+                    "None of Claude’s \(resolved.skipped.count) suggestions could be placed in the document reliably.")
+            }
+
+            let parts = try session.serialize()
+            let temp = dst.deletingLastPathComponent()
+                .appendingPathComponent(".\(UUID().uuidString.prefix(8))-\(dst.lastPathComponent).partial")
+            defer { try? FileManager.default.removeItem(at: temp) }
+            try loaded.package.writeCopy(to: temp, replacements: parts.replacements, additions: parts.additions)
+
+            do {
+                try Verifier.verify(output: temp, original: loaded, session: session, expected: resolved)
+            } catch let failure as VerificationFailure {
+                lastFailure = failure
+                guard excluded.insert(failure.paragraph).inserted else { throw failure.reviewError }
+                continue
+            }
+
+            do {
+                try FileManager.default.moveItem(at: temp, to: dst)
+            } catch {
+                throw ReviewError.outputLocation("Couldn’t save the reviewed copy to \(dst.deletingLastPathComponent().path).")
+            }
+            return RedlineReport(trackedChanges: session.revisionIDs.count,
+                                 comments: session.commentIDs.count,
+                                 skipped: resolved.skipped)
         }
-
-        let parts = try session.serialize()
-        let temp = dst.deletingLastPathComponent()
-            .appendingPathComponent(".\(UUID().uuidString.prefix(8))-\(dst.lastPathComponent).partial")
-        defer { try? FileManager.default.removeItem(at: temp) }
-        try loaded.package.writeCopy(to: temp, replacements: parts.replacements, additions: parts.additions)
-
-        try Verifier.verify(output: temp, original: loaded, session: session, expected: resolved)
-
-        do {
-            try FileManager.default.moveItem(at: temp, to: dst)
-        } catch {
-            throw ReviewError.outputLocation("Couldn’t save the reviewed copy to \(dst.deletingLastPathComponent().path).")
-        }
-        return RedlineReport(trackedChanges: session.revisionIDs.count,
-                             comments: session.commentIDs.count,
-                             skipped: resolved.skipped)
+        throw lastFailure?.reviewError ?? ReviewError.verificationFailed("The reviewed copy couldn’t be verified.")
     }
+}
+
+extension RedlineEngine {
+    static let integrityReason = "Adding it failed the integrity check for this part of the document, so it was left out to keep the rest of the file correct."
 }
 
 // MARK: - Loaded document
@@ -147,6 +177,14 @@ final class LoadedDocument {
         var scanner = ParagraphScanner(names: names)
         paragraphs = scanner.scanBody(body)
         originalTexts = paragraphs.map(\.text)
+    }
+
+    /// A short quote of a paragraph range, for reporting.
+    func excerpt(_ paragraph: Int, _ range: Range<Int>) -> String {
+        guard paragraph < originalTexts.count else { return "" }
+        let text = originalTexts[paragraph]
+        let r = max(0, range.lowerBound)..<min(text.count, max(range.lowerBound, range.upperBound))
+        return String(String.UnicodeScalarView(text[r].prefix(80)))
     }
 
     var mainDirectory: String {

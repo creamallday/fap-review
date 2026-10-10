@@ -82,7 +82,8 @@ public enum ReviewError: LocalizedError, Equatable {
         case .unsupportedDocument(let m): return "This document can’t be reviewed: \(m)"
         case .unreadableDocument(let m): return "The document couldn’t be read: \(m)"
         case .verificationFailed(let m):
-            return "The reviewed copy failed its integrity check, so it was not saved. \(m)"
+            // Anything after a blank line is diagnostic detail, shown only under "Technical details".
+            return "The reviewed copy failed its integrity check, so it was not saved. \(m.components(separatedBy: "\n\n").first ?? m)"
         case .outputLocation(let m): return m
         case .claude(let m): return m
         case .cancelled: return "Review cancelled."

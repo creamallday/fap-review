@@ -185,3 +185,31 @@ final class MultiEditRegressionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(report.trackedChanges, 3)
     }
 }
+
+final class IntegrityRetryTests: XCTestCase {
+    func testFailedParagraphIsLeftOutAndTheRestSurvives() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("retry-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir); Verifier.injectedFailures = [] }
+        let source = dir.appendingPathComponent("memo.docx")
+        try FileManager.default.copyItem(at: try XCTUnwrap(Bundle.module.url(forResource: "Fixtures/basic-memo", withExtension: "docx")), to: source)
+        let plan = ReviewPlan(summary: "", edits: [
+            .init(paragraph: 6, original: "Both vehicles is used daily", revised: "Both vehicles are used daily"),
+            .init(paragraph: 9, original: "gasoline-powered", revised: "gasoline- or hybrid-powered"),
+        ], comments: [.init(paragraph: 9, quote: "ZEV mandate", comment: "Unsupported.")])
+        Verifier.injectedFailures = [9]
+        let out = dir.appendingPathComponent("out.docx")
+        let report = try RedlineEngine.apply(plan, to: source, writingTo: out, options: RedlineOptions(author: "Chris Holm"))
+
+        XCTAssertEqual(report.skipped.count, 2, "the edit and the comment on paragraph 9")
+        XCTAssertTrue(report.skipped.allSatisfy { $0.paragraph == 9 && $0.reason.contains("integrity check") })
+        XCTAssertGreaterThanOrEqual(report.trackedChanges, 2, "paragraph 6 is still changed")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: out.path))
+    }
+
+    func testFailureDetailNamesTheDifference() {
+        let a = Array("state fleet data".unicodeScalars), b = Array("state  fleet data".unicodeScalars)
+        let text = VerificationFailure.describe(expected: a, actual: b)
+        XCTAssertTrue(text.contains("first difference at character 6"))
+    }
+}
