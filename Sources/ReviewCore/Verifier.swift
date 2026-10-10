@@ -47,10 +47,20 @@ enum Verifier {
         var accepting = ParagraphScanner(names: names, view: RevisionView(
             showInsertion: { _ in true }, showDeletion: { _ in false }))
         let accepted = accepting.scanBody(body).map(\.text)
+        // Apply every hunk of a paragraph from the end backwards so earlier offsets stay valid,
+        // regardless of which suggestion each hunk came from.
         var intended = original.originalTexts
-        for edit in expected.edits {
-            for hunk in edit.hunks.sorted(by: { $0.deleted.lowerBound > $1.deleted.lowerBound }) {
-                intended[edit.paragraph].replaceSubrange(hunk.deleted, with: Array(hunk.inserted.unicodeScalars))
+        let hunksByParagraph = Dictionary(grouping: expected.edits.flatMap { edit in edit.hunks.map { (edit.paragraph, $0) } },
+                                          by: { $0.0 })
+        for (paragraph, pairs) in hunksByParagraph {
+            let ordered = pairs.map(\.1).sorted {
+                ($0.deleted.lowerBound, $0.deleted.upperBound) > ($1.deleted.lowerBound, $1.deleted.upperBound)
+            }
+            for hunk in ordered {
+                guard paragraph < intended.count, hunk.deleted.upperBound <= intended[paragraph].count else {
+                    throw fail("Internal error: a change pointed outside paragraph \(paragraph).")
+                }
+                intended[paragraph].replaceSubrange(hunk.deleted, with: Array(hunk.inserted.unicodeScalars))
             }
         }
         guard accepted.count == intended.count else { throw fail("The paragraph count changed.") }

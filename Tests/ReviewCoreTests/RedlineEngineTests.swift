@@ -164,3 +164,24 @@ final class RedlineEngineTests: XCTestCase {
         XCTAssertThrowsError(try RedlineEngine.readText(of: bogus))
     }
 }
+
+final class MultiEditRegressionTests: XCTestCase {
+    /// Several edits in one paragraph, listed out of document order, once made the integrity check
+    /// compare against the wrong expected text and reject correct output.
+    func testSeveralEditsInOneParagraphOutOfOrder() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("multi-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let source = dir.appendingPathComponent("memo.docx")
+        try FileManager.default.copyItem(at: try XCTUnwrap(Bundle.module.url(forResource: "Fixtures/basic-memo", withExtension: "docx")), to: source)
+        let plan = ReviewPlan(summary: "", edits: [
+            .init(paragraph: 9, original: "An exemption from the ZEV mandate is therefore requested.", revised: "A ZEV exemption is requested."),
+            .init(paragraph: 9, original: "gasoline-powered", revised: "gasoline- or hybrid-powered"),
+            .init(paragraph: 9, original: "not available at all monitoring stations", revised: "unavailable at several monitoring stations"),
+        ])
+        let out = dir.appendingPathComponent("out.docx")
+        let report = try RedlineEngine.apply(plan, to: source, writingTo: out, options: RedlineOptions(author: "Chris Holm"))
+        XCTAssertEqual(report.skipped, [])
+        XCTAssertGreaterThanOrEqual(report.trackedChanges, 3)
+    }
+}
