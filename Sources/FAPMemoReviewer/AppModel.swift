@@ -106,10 +106,7 @@ final class AppModel {
         reviewTask = Task { [weak self] in
             do {
                 let outcome = try await ReviewPipeline.run(request, provider: cli) { stage in
-                    Task { @MainActor [weak self] in
-                        guard let self, self.isReviewing else { return }
-                        withAnimation(.easeInOut(duration: 0.2)) { self.phase = .reviewing(stage) }
-                    }
+                    Task { @MainActor in AppModel.shared.showStage(stage) }
                 }
                 guard !Task.isCancelled else { return }
                 withAnimation(.spring(duration: 0.35)) { self?.phase = .finished(outcome) }
@@ -124,6 +121,11 @@ final class AppModel {
                 Task { await self?.refreshConnection() }
             }
         }
+    }
+
+    private func showStage(_ stage: ReviewStage) {
+        guard isReviewing else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { phase = .reviewing(stage) }
     }
 
     func cancelReview() {
